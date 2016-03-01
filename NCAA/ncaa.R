@@ -16,7 +16,12 @@ SampleSubmission <- read_csv("SampleSubmission.csv")
 Teams <- read_csv("Teams.csv") # 球队的名称及所对应的ID
 TourneyDetailedResults <- read_csv("TourneyDetailedResults.csv")
 TourneySeeds <- read_csv("TourneySeeds.csv")
-TourneySlots <- read_csv("TourneySlots.csv") # slot唯一标识一场比赛
+# 根据种子排名来决定交战双方，slot是唯一标识一场比赛
+TourneySlots <- read_csv("TourneySlots.csv") 
 
 TourneySlots <- TourneySlots %>% 
-  left_join(TourneySeeds, by=c(""))
+  left_join(TourneySeeds, by=c("Season", "Strongseed"="Seed")) %>% 
+  rename(Strongteam=Team) %>% 
+  left_join(TourneySeeds, by=c("Season", "Weakseed"="Seed")) %>% 
+  rename(Weakteam=Team)
+
