@@ -1,11 +1,17 @@
-# Stage 1 - You should submit predicted probabilities for every possible matchup in the past 4 NCAA tournaments (2012-2015).
-# Stage 2 - You should submit predicted probabilities for every possible matchup before the 2016 tournament begins.
-# Refer to the Timeline page for specific dates. In both stages, the sample submission will tell you which games to predict.
+# Stage 1 - You should submit predicted probabilities for every possible matchup in the 
+# past 4 NCAA tournaments (2012-2015).
+# Stage 2 - You should submit predicted probabilities for every possible matchup before 
+# the 2016 tournament begins.
+# Refer to the Timeline page for specific dates. In both stages, the sample submission 
+# will tell you which games to predict.
 
 setwd('kaggle/NCAA/')
 
 library(dplyr)
+library(tidyr)
 library(readr)
+library(lubridate)
+
 RegularSeasonCompactResults <- read_csv("RegularSeasonCompactResults.csv")
 RegularSeasonDetailedResults <- read_csv("RegularSeasonDetailedResults.csv")
 
@@ -25,3 +31,4 @@ TourneySlots <- TourneySlots %>%
   left_join(TourneySeeds, by=c("Season", "Weakseed"="Seed")) %>% 
   rename(Weakteam=Team)
 
+SampleSubmission <- SampleSubmission %>% separate(Id, c("year", "team1", "team2"), sep="_")
