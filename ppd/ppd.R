@@ -61,11 +61,11 @@
 # 
 # idx：每一笔贷款的unique key
 
-setwd('../Desktop/ppd/Training Set/')
-library(readr)
+setwd('d:/kaggle/ppd/Training Set/')
 library(dplyr)
 library(magrittr)
 
-ppd1 <- read_csv("PPD_LogInfo_3_1_Training_Set.csv")
-ppd2 <- read.csv("PPD_Training_Master_GBK_3_1_Training_Set.csv", as.is = T)
-ppd3 <- read_csv("PPD_Userupdate_Info_3_1_Training_Set.csv")
+log_info <- read.csv("PPD_LogInfo_3_1_Training_Set.csv", as.is = T)
+train <- read.csv("PPD_Training_Master_GBK_3_1_Training_Set.csv", as.is = T)
+user_info <- read.csv("PPD_Userupdate_Info_3_1_Training_Set.csv", as.is = T)
+
