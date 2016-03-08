@@ -38,7 +38,7 @@
 # Log_Info
 # 借款人的登陆信息。
 # 
-# ListingInfo：借款成交时间
+# ListingInfo：借款成交时间 一个id对应一个时间
 # 
 # LogInfo1：操作代码
 # 
@@ -53,7 +53,7 @@
 # Userupdate_Info
 # 借款人修改信息
 # 
-# ListingInfo1：借款成交时间
+# ListingInfo1：借款成交时间 一个id对应一个时间
 # 
 # UserupdateInfo1：修改内容
 # 
@@ -69,3 +69,11 @@ log_info <- read.csv("PPD_LogInfo_3_1_Training_Set.csv", as.is = T)
 train <- read.csv("PPD_Training_Master_GBK_3_1_Training_Set.csv", as.is = T)
 user_info <- read.csv("PPD_Userupdate_Info_3_1_Training_Set.csv", as.is = T)
 
+lapply(log_info, n_distinct)
+lapply(user_info, n_distinct)
+
+char_var <- names(train)[sapply(train, class)=="character"] # 查看字符型的变量
+lapply(char_var, function(x) n_distinct(train[, x]))
+lapply(train, n_distinct)
+
+train1 <- train %>% left_join(user_info) %>% left_join(log_info %>% select(-Listinginfo1))
