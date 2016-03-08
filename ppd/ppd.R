@@ -1,72 +1,36 @@
-# 拍拍贷“魔镜风控系统”从平均400个数据维度评估用户当前的信用状态，给每个借款人打出当前状态的信用分，在此基础上，再结合新发标的信息，打出对于每个标的6个月内逾期率的预测，为投资人提供了关键的决策依据，促进健康高效的互联网金融。拍拍贷首次开放丰富而真实的历史数据，邀你PK“魔镜风控系统”，通过机器学习技术，你能设计出更具预测准确率和计算性能的违约预测算法吗？
-# 
-
-# 1.基于机器学习等技术，使用拍拍贷提供的历史交易数据进行训练，设计违约预测算法。 算法预测准确率评判，将基于独立的测试集完成
-# 2.初赛阶段，参赛团队需要在线提交：测试集预测输出、算法代码。排名前100名的团队将进入复赛阶段
-# 3.复赛阶段，参赛团队需要在线提交：测试集预测输出、算法代码、算法说明文档。排名前6名的团队将进入决赛阶段
-# 4.决赛阶段，参赛团队将在现场进行算法答辩，评委将进行现场评分，现场选出金银铜奖。
-# 5.计算平台资源：七牛云将为进入复赛的前100名选手，提供在线计算平台（基于IPython-notebook）
-# 评分维度
-# 1.初赛阶段，比赛基于预测算法的准确率（采用AUC标准, Area under the ROC curve）进行算法表现的排名
-# 2.复赛阶段，AUC排名将占到70%权重，算法说明报告占到30%的权重，其中说明报告需要包括：数据处理、变量生成、模型算法和其他讨论
-# 3.决赛阶段，现场算法答辩的评分维度为：算法AUC表现、数据处理、变量生成、模型算法和其他讨论
-# 数据类型
-# 赛事所使用数据为拍拍贷用户个人信息、拍拍贷平台使用行为数据、运营商信息、社交关系数据、网上行为数据、第三方信息。其中初赛阶段，训练数据集为3万行，测试数据集为2万行，将对于报名比赛选手开放下载。复赛阶段，将为前100名复赛团队，再提供4万行训练数据集，以及1万行测试数据集。
-# （注：数据样本来源于拍拍贷历史交易记录，经过严格的数据清洗和去隐私化处理）
-
 # Master
 # 每一行代表一个样本（一笔成功成交借款），每个样本包含200多个各类字段。
-# 
 # idx：每一笔贷款的unique key，可以与另外2个文件里的idx相匹配。
-# 
 # UserInfo_*：借款人特征字段
-# 
 # WeblogInfo_*：Info网络行为字段
-# 
 # Education_Info*：学历学籍字段
-# 
 # ThirdParty_Info_PeriodN_*：第三方数据时间段N字段
-# 
 # SocialNetwork_*：社交网络字段
-# 
 # LinstingInfo：借款成交时间
-# 
 # Target：违约标签（1 = 贷款违约，0 = 正常还款）。测试集里不包含target字段。
-# 
-# 
-# 
+
 # Log_Info
 # 借款人的登陆信息。
-# 
-# ListingInfo：借款成交时间 一个id对应一个时间
-# 
-# LogInfo1：操作代码
-# 
-# LogInfo2：操作类别
-# 
+# ListingInfo：借款成交时间 一个id对应一个时间 和user_info中一样
+# LogInfo1：操作代码 有35种代码
+# LogInfo2：操作类别 有15种类别
 # LogInfo3：登陆时间
-# 
-# idx：每一笔贷款的unique key
-# 
-# 
-# 
-# Userupdate_Info
-# 借款人修改信息
-# 
-# ListingInfo1：借款成交时间 一个id对应一个时间
-# 
-# UserupdateInfo1：修改内容
-# 
-# UserupdateInfo2：修改时间
-# 
 # idx：每一笔贷款的unique key
 
-setwd('d:/kaggle/ppd/Training Set/')
+# Userupdate_Info
+# 借款人修改信息
+# ListingInfo1：借款成交时间 一个id对应一个时间
+# UserupdateInfo1：修改内容
+# UserupdateInfo2：修改时间
+# idx：每一笔贷款的unique key
+
+# setwd('d:/kaggle/ppd/Training Set/')
+setwd('kaggle/ppd/Training Set/')
 library(dplyr)
 library(magrittr)
 
 log_info <- read.csv("PPD_LogInfo_3_1_Training_Set.csv", as.is = T)
-train <- read.csv("PPD_Training_Master_GBK_3_1_Training_Set.csv", as.is = T)
+train <- read.csv("PPD_Training_Master_GBK_3_1_Training_Set.csv", fileEncoding='gbk', as.is = T)
 user_info <- read.csv("PPD_Userupdate_Info_3_1_Training_Set.csv", as.is = T)
 
 lapply(log_info, n_distinct)
@@ -77,3 +41,33 @@ lapply(char_var, function(x) n_distinct(train[, x]))
 lapply(train, n_distinct)
 
 train1 <- train %>% left_join(user_info) %>% left_join(log_info %>% select(-Listinginfo1))
+ 
+log_info %>% distinct() %>% nrow
+nrow(log_info)
+user_info %>% distinct() %>% nrow
+nrow(user_info)
+
+# select_vars()
+
+names(train)[sapply(train, n_distinct)==1] # WeblogInfo_10是没用的
+
+# train %>% select_("UserInfo_2", "UserInfo_4") %>% select(starts_with("UserInfo")) %>% head()
+train[, names(train) %in% char_var] %>% select(starts_with("WeblogInfo")) %>% head()
+
+# D应该代表缺失
+# UserInfo_8 手机运营商 还需要去除空格
+# UserInfo_21 婚姻状况
+# UserInfo_22 学历状况
+# UserInfo_23 具体地址
+# Education_Info2 "E"  "AM" "A"  "AN" "AQ" "U"  "B" 
+# Education_Info3 "E"    "毕业" "结业" E似乎代表空值
+# Education_Info4 "E"  "T"  "AR" "F"  "V"  "AE"
+# Education_Info6 "E"  "A"  "AM" "AQ" "U"  "B" 
+# Education_Info7 "E"    "不详" 没用的字段
+# Education_Info8 "E"    "T"    "F"    "V"    "AE"   "80"   "不详"
+
+# WeblogInfo_19 "I" "E" "F" "D" "J" "G" "H" "" 
+# WeblogInfo_20
+# WeblogInfo_21 "D" "C" "A" "B" "" 
+
+# 我要借款 我要理财
