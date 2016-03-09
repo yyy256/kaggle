@@ -9,7 +9,7 @@
 # LinstingInfo：借款成交时间
 # Target：违约标签（1 = 贷款违约，0 = 正常还款）。测试集里不包含target字段。
 
-# Log_Info
+# Log_Info 有重复的行为
 # 借款人的登陆信息。
 # ListingInfo：借款成交时间 一个id对应一个时间 和user_info中一样
 # LogInfo1：操作代码 有35种代码
@@ -17,7 +17,7 @@
 # LogInfo3：登陆时间
 # idx：每一笔贷款的unique key
 
-# Userupdate_Info
+# Userupdate_Info 有重复的行为
 # 借款人修改信息
 # ListingInfo1：借款成交时间 一个id对应一个时间
 # UserupdateInfo1：修改内容
@@ -28,10 +28,25 @@
 setwd('kaggle/ppd/Training Set/')
 library(dplyr)
 library(magrittr)
+library(stringr)
+library(lubridate)
 
 log_info <- read.csv("PPD_LogInfo_3_1_Training_Set.csv", as.is = T)
 train <- read.csv("PPD_Training_Master_GBK_3_1_Training_Set.csv", fileEncoding='gbk', as.is = T)
 user_info <- read.csv("PPD_Userupdate_Info_3_1_Training_Set.csv", as.is = T)
+
+names(log_info) <- tolower(names(log_info))
+names(train) <- tolower(names(train))
+names(user_info) <- tolower(names(user_info))
+
+log_info$listinginfo1 <- ymd(log_info$listinginfo1)
+log_info$loginfo3 <- ymd(log_info$loginfo3)
+user_info$listinginfo1 <- ymd(user_info$listinginfo1)
+user_info$userupdateinfo2 <- ymd(user_info$userupdateinfo2)
+train$listinginfo <- ymd(train$listinginfo)
+
+# 将修改内容都变成小写，去掉两边空格
+user_info$UserupdateInfo1 <- str_trim(tolower(user_info$UserupdateInfo1))
 
 lapply(log_info, n_distinct)
 lapply(user_info, n_distinct)
