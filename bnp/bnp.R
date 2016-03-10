@@ -11,7 +11,7 @@ setwd('d:/kaggle/bnp/')
 library(dplyr)
 library(readr)
 
-train < read_csv('train.csv')
+train <- read_csv('train.csv')
 
 char_vars <- names(train)[sapply(train, class)=="character"]
 
@@ -19,4 +19,4 @@ sapply(select(train, one_of(char_vars)), n_distinct)
 unique(train$v22) %>% head(30)
 
 sapply(train, function(x) sum(is.na(x)))
-names(train)[sapply(train, function(x) n_distinct(x) > 2)]
+names(train)[sapply(train, function(x) n_distinct(x) == 2)]
