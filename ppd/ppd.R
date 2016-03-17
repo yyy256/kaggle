@@ -30,6 +30,8 @@ library(dplyr)
 library(magrittr)
 library(stringr)
 library(lubridate)
+library(xgboost)
+library(Matrix)
 
 log_info <- read.csv("PPD_LogInfo_3_1_Training_Set.csv", as.is = T)
 train <- read.csv("PPD_Training_Master_GBK_3_1_Training_Set.csv", fileEncoding='gbk', as.is = T)
@@ -46,7 +48,7 @@ user_info$userupdateinfo2 <- ymd(user_info$userupdateinfo2)
 train$listinginfo <- ymd(train$listinginfo)
 
 # 将修改内容都变成小写，去掉两边空格
-user_info$UserupdateInfo1 <- str_trim(tolower(user_info$UserupdateInfo1))
+user_info$userupdateinfo1 <- str_trim(tolower(user_info$userupdateinfo1))
 
 lapply(log_info, n_distinct)
 lapply(user_info, n_distinct)
@@ -86,3 +88,29 @@ train[, names(train) %in% char_var] %>% select(starts_with("WeblogInfo")) %>% he
 # WeblogInfo_21 "D" "C" "A" "B" "" 
 
 # 我要借款 我要理财
+
+user_info <- user_info %>% left_join(train %>% select(idx, target)) %>% 
+  mutate(update_gap = as.numeric(difftime(listinginfo1, userupdateinfo2, units='days')))
+log_info <- log_info %>% left_join(train %>% select(idx, target))
+
+# 上次修改内容的最大时间间隔，最小时间间隔，平均时间间隔
+
+# 之前修改了几种信息 (无用)
+a1 <- user_info %>% group_by(idx) %>% summarise(f=n_distinct(userupdateinfo1)) %>% 
+  left_join(train %>% select(idx, target))
+boxplot(f ~ target, data = a1)
+# 修改了那种信息，用one-hot-encoding
+# 婚姻
+# 学历
+
+compute_var <- function(df){
+  gap_df <- df %>% group_by(idx) %>% summarise(min_update_gap=min(gap),
+                                               max_update_gap=max(gap),
+                                               mean_update_gap=mean(gap))
+  # dummy_var <- sparse.model.matrix(target ~ -1, 
+  #               data = df %>% select(idx, userupdateinfo1, target) %>% 
+  #                 mutate(target=as.factor(target)) %>% distinct())
+  dummy_var <- model.matrix(~ userupdateinfo1, data = df %>% 
+                              select(idx, userupdateinfo1) %>% 
+                 mutate(userupdateinfo1=as.factor(userupdateinfo1)) %>% distinct())
+}
