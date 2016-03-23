@@ -35,6 +35,8 @@ library(Matrix)
 # library(randomForest)
 # library(rpart)
 library(ROCR)
+library(caret)
+library(glmnet)
 
 train_log_info <- read.csv("./Training Set/PPD_LogInfo_3_1_Training_Set.csv", as.is = T)
 train_master <- read.csv("./Training Set/PPD_Training_Master_GBK_3_1_Training_Set.csv", fileEncoding='gbk', as.is = T)
@@ -61,7 +63,7 @@ pre_process_func <- function(log_info, master, user_info){
   master$year <- as.factor(year(master$listinginfo))
   master$month <- as.factor(month(master$listinginfo))
   master$day <- as.factor(day(master$listinginfo))
-  
+
   # 将修改内容都变成小写，去掉两边空格
   user_info$userupdateinfo1 <- str_trim(tolower(user_info$userupdateinfo1))
 
@@ -162,6 +164,11 @@ compute_var <- function(log_info, master, user_info){
   return(model_df)
 }
 
+# 标准化
+scale_func <- function(x){
+  (x-min(x)) / (max(x)-min(x))
+}
+
 log_info <- bind_rows(train_df[[1]], test_df[[1]])
 user_info <- bind_rows(train_df[[3]], test_df[[3]])
 master <- bind_rows(train_df[[2]] %>% select(-target), test_df[[2]])
@@ -175,6 +182,17 @@ model_df[is.na(model_df$mean_log_gap), 'mean_log_gap'] <- median(model_df$mean_l
 model_df[is.na(model_df$min_update_gap), 'min_update_gap'] <- median(model_df$min_update_gap, na.rm = T)
 model_df[is.na(model_df$max_update_gap), 'max_update_gap'] <- median(model_df$max_update_gap, na.rm = T)
 model_df[is.na(model_df$mean_update_gap), 'mean_update_gap'] <- median(model_df$mean_update_gap, na.rm = T)
+# model_df$min_log_gap <- scale_func(model_df$min_log_gap)
+# model_df$max_log_gap <- scale_func(model_df$max_log_gap)
+# model_df$mean_log_gap <- scale_func(model_df$mean_log_gap)
+# model_df$min_update_gap <- scale_func(model_df$min_update_gap)
+# model_df$max_update_gap <- scale_func(model_df$max_update_gap)
+# model_df$mean_update_gap <- scale_func(model_df$mean_update_gap)
+
+# thirdparty_info都应该标准化
+# i <- substr(names(model_df), 1, 10) == 'thirdparty'
+# model_df[i] <- lapply(model_df[i], scale_func)
+
 model_df[is.na(model_df)] <- 0
 # sparse_matrix_df <- sparse.model.matrix(~.-1, model_df)
 names(model_df)[247:248] <- c('loginfo1_10', 'loginfo1_4')
@@ -186,20 +204,39 @@ test_model_df <- model_df %>% filter(idx %in% test_master$Idx)
 train_sparse_matrix <- sparse.model.matrix(target ~ .-1-idx, train_model_df)
 test_sparse_matrix <- sparse.model.matrix(~ .-1-idx, test_model_df)
 
-bst <- xgboost(data = train_sparse_matrix, label = train_model_df$target, max.depth = 30,
-               eta = 0.3, nround = 252,objective = "binary:logistic", eval_metric = "auc")
-xgb.plot.deepness(model = bst)
-bst <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 5, eta = 0.3,
-              nrounds = 500, max.depth = 30, objective = "binary:logistic", eval_metric = "auc",
-              early.stop.round = 20)
+bst <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 5, eta = 0.05,
+              nrounds = 2000, max.depth = 40, objective = "binary:logistic", eval_metric = "auc",
+              early.stop.round = 100, scale_pos_weight = 0.01)
 
+bst <- xgboost(data = train_sparse_matrix, label = train_model_df$target, max.depth = 40,
+               eta = 0.05, nround = 662,objective = "binary:logistic", eval_metric = "auc",
+               scale_pos_weight = 0.01)
+# xgb.plot.deepness(model = bst)
 p <- predict(bst, test_sparse_matrix)
+
 importance_matrix <- xgb.importance(train_sparse_matrix@Dimnames[[2]], model = bst)
 xgb.plot.importance(importance_matrix)
 
-fit_lm <- glm(target ~ ., family=binomial(link="logit"), data = train_model_df[, -c(1, 4)])
-train_p_lm <- predict(fit_lm, newdata = train_model_df, type = "response")
-p_lm <- predict(fit_lm, newdata = test_model_df, type = "response")
+glm_matrix <- train_sparse_matrix[, importance_matrix$Feature[1:100]]
+
+inTrain <- createDataPartition(y = train_model_df$target, p = .75, list = FALSE)
+
+
+cctrl1 <- trainControl(method = "cv", number = 3, returnResamp = "all",
+                       classProbs = T, summaryFunction = twoClassSummary)
+set.seed(849)
+trainY <- factor(train_model_df$target, labels=c('no', 'yes'))
+test_class_cv_model <- train(glm_matrix, trainY,
+                             method = "glmnet",
+                             trControl = cctrl1,
+                             metric = "ROC",
+                             preProc = c("center", "scale"),
+                             tuneGrid = expand.grid(.alpha = seq(.05, 1, length = 15),
+                                                    .lambda = c((1:5)/10)))
+
+# fit_lm <- glm(target ~ ., family=binomial(link="logit"), data = train_model_df[, -c(1, 4)])
+# train_p_lm <- predict(fit_lm, newdata = train_model_df, type = "response")
+# p_lm <- predict(fit_lm, newdata = test_model_df, type = "response")
 
 calc_auc_func <- function(p) {
   ppred <- prediction(p, train_model_df$target)
@@ -211,7 +248,7 @@ calc_auc_func <- function(p) {
 res <- test_model_df %>% select(idx) %>% mutate(score=round(p, 4))
 res[is.na(res)] <- 0
 names(res)[1] <- 'Idx'
-write.csv(res, 'res0321.csv', row.names=F)
+write.csv(res, 'res0323.csv', row.names=F)
 
 # fit_dt <- rpart(target ~ ., data = train_model_df[, -1],
 #                 control = rpart.control(cp = 0.1))
@@ -238,7 +275,7 @@ train_master %>% select(starts_with('Educa')) %>% filter(Education_Info1==0) %$%
 train_master %>% select(Education_Info3, UserInfo_23) %>% filter(Education_Info3=="毕业") %$%
   unique(UserInfo_23)
 
-train_master %>% select(starts_with('Soci')) %>%
+train_master %>% select(starts_with('socialnetwork')) %>%
   head(1000) %>% View
 
 sapply(train_master %>% select(starts_with('Soci')), n_distinct)
