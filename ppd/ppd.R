@@ -34,9 +34,9 @@ library(xgboost)
 library(Matrix)
 # library(randomForest)
 # library(rpart)
-library(ROCR)
-library(caret)
-library(glmnet)
+# library(ROCR)
+# library(caret)
+# library(glmnet)
 
 train_log_info <- read.csv("./Training Set/PPD_LogInfo_3_1_Training_Set.csv", as.is = T)
 train_master <- read.csv("./Training Set/PPD_Training_Master_GBK_3_1_Training_Set.csv", fileEncoding='gbk', as.is = T)
@@ -127,12 +127,25 @@ test_df <- pre_process_func(test_log_info, test_master, test_user_info)
 # 学历
 
 compute_var <- function(log_info, master, user_info){
-  gap_update_df <- user_info %>% group_by(idx) %>% summarise(min_update_gap=min(update_gap),
-                                               max_update_gap=max(update_gap),
-                                               mean_update_gap=mean(update_gap))
+  # 购买时间间隔；修改过几次lastupdatedate, realname, districtid, provinceid, qq
+  gap_update_df <- user_info %>% group_by(idx) %>% summarise(
+    num_lastupdatedate=sum(userupdateinfo1=='lastupdatedate'),
+    num_realname=sum(userupdateinfo1=='realname'),
+    num_districtid=sum(userupdateinfo1=='districtid'),
+    num_provinceid=sum(userupdateinfo1=='provinceid'),
+    num_qq=sum(userupdateinfo1=='qq'),
+    m1=max(userupdateinfo2),
+    m2=min(userupdateinfo2),
+    f_user=n()-1,
+    min_update_gap=min(update_gap),
+    max_update_gap=max(update_gap),
+    mean_update_gap=mean(update_gap)) %>%
+    mutate(m_update_gap=as.numeric(difftime(m1, m2, units='days')/f_user)) %>%
+    select(-m1, -m2)
   # dummy_var <- sparse.model.matrix(target ~ -1,
   #               data = df %>% select(idx, userupdateinfo1, target) %>%
   #                 mutate(target=as.factor(target)) %>% distinct())
+
   dummy_var <- model.matrix(~ -1 + userupdateinfo1, data = user_info %>%
                               select(idx, userupdateinfo1) %>%
                  mutate(userupdateinfo1=as.factor(userupdateinfo1)) %>% distinct())
@@ -149,7 +162,11 @@ compute_var <- function(log_info, master, user_info){
 
   gap_log_df <- log_info %>% group_by(idx) %>% summarise(min_log_gap=min(log_gap),
                                                max_log_gap=max(log_gap),
-                                               mean_log_gap=mean(log_gap))
+                                               mean_log_gap=mean(log_gap),
+                                               m1=max(loginfo3),
+                                               m2=min(loginfo3),
+                                               f_log=n()-1) %>%
+    mutate(m_log_gap=as.numeric(difftime(m1, m2, units='days'))/f_log) %>% select(-m1, -m2)
   master[master$userinfo_23=="不详", "userinfo_23"] <- 'D'
   master[master$userinfo_22=="不详", "userinfo_22"] <- 'D'
   # master_df <- master %>% select(idx, userinfo_22, userinfo_21, userinfo_23, education_info3) %>%
@@ -188,6 +205,10 @@ model_df[is.na(model_df$mean_update_gap), 'mean_update_gap'] <- median(model_df$
 # model_df$min_update_gap <- scale_func(model_df$min_update_gap)
 # model_df$max_update_gap <- scale_func(model_df$max_update_gap)
 # model_df$mean_update_gap <- scale_func(model_df$mean_update_gap)
+model_df$thirdparty_info_period2_3_log <- log1p(model_df$thirdparty_info_period2_3)
+model_df$thirdparty_info_period4_15_log <- log1p(model_df$thirdparty_info_period4_15)
+model_df$thirdparty_info_period2_15_log <- log1p(model_df$thirdparty_info_period2_15)
+model_df$thirdparty_info_period4_2_log <- log1p(model_df$thirdparty_info_period4_2)
 
 # thirdparty_info都应该标准化
 # i <- substr(names(model_df), 1, 10) == 'thirdparty'
@@ -195,7 +216,7 @@ model_df[is.na(model_df$mean_update_gap), 'mean_update_gap'] <- median(model_df$
 
 model_df[is.na(model_df)] <- 0
 # sparse_matrix_df <- sparse.model.matrix(~.-1, model_df)
-names(model_df)[247:248] <- c('loginfo1_10', 'loginfo1_4')
+names(model_df)[match(c("loginfo1-10", "loginfo1-4"), names(model_df))] <- c('loginfo1_10', 'loginfo1_4')
 
 train_model_df <- model_df %>% filter(idx %in% train_master$Idx) %>%
   left_join(train_master %>% select(Idx, target), by=c("idx"="Idx"))
@@ -204,12 +225,14 @@ test_model_df <- model_df %>% filter(idx %in% test_master$Idx)
 train_sparse_matrix <- sparse.model.matrix(target ~ .-1-idx, train_model_df)
 test_sparse_matrix <- sparse.model.matrix(~ .-1-idx, test_model_df)
 
-bst <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 5, eta = 0.05,
-              nrounds = 2000, max.depth = 40, objective = "binary:logistic", eval_metric = "auc",
+bst <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 5, eta = 0.1,
+              nrounds = 2000, max.depth = 50, objective = "binary:logistic", eval_metric = "auc",
               early.stop.round = 100, scale_pos_weight = 0.01)
-
-bst <- xgboost(data = train_sparse_matrix, label = train_model_df$target, max.depth = 40,
-               eta = 0.05, nround = 662,objective = "binary:logistic", eval_metric = "auc",
+# 0.743673+0.007338
+# 0.741335+0.010964
+# 0.747451+0.008305
+bst <- xgboost(data = train_sparse_matrix, label = train_model_df$target, max.depth = 50,
+               eta = 0.1, nround = 328,objective = "binary:logistic", eval_metric = "auc",
                scale_pos_weight = 0.01)
 # xgb.plot.deepness(model = bst)
 p <- predict(bst, test_sparse_matrix)
@@ -219,18 +242,22 @@ xgb.plot.importance(importance_matrix)
 
 glm_matrix <- train_sparse_matrix[, importance_matrix$Feature[1:100]]
 
-inTrain <- createDataPartition(y = train_model_df$target, p = .75, list = FALSE)
+# inTrain <- createDataPartition(y = train_model_df$target, p = .75, list = FALSE)
 
 
-cctrl1 <- trainControl(method = "cv", number = 3, returnResamp = "all",
+cctrl1 <- trainControl(method = "cv", number = 3,
+                       # returnResamp = "all",
                        classProbs = T, summaryFunction = twoClassSummary)
 set.seed(849)
 trainY <- factor(train_model_df$target, labels=c('no', 'yes'))
+set.seed(9560)
+down_glm_matrix <- downSample(x = glm_matrix, y = trainY)
+
 test_class_cv_model <- train(glm_matrix, trainY,
                              method = "glmnet",
                              trControl = cctrl1,
                              metric = "ROC",
-                             preProc = c("center", "scale"),
+                             # preProc = c("center", "scale"),
                              tuneGrid = expand.grid(.alpha = seq(.05, 1, length = 15),
                                                     .lambda = c((1:5)/10)))
 
@@ -248,7 +275,7 @@ calc_auc_func <- function(p) {
 res <- test_model_df %>% select(idx) %>% mutate(score=round(p, 4))
 res[is.na(res)] <- 0
 names(res)[1] <- 'Idx'
-write.csv(res, 'res0323.csv', row.names=F)
+write.csv(res, 'res0324.csv', row.names=F)
 
 # fit_dt <- rpart(target ~ ., data = train_model_df[, -1],
 #                 control = rpart.control(cp = 0.1))
@@ -285,3 +312,7 @@ table(train_master$ThirdParty_Info_Period2_6)
 # 2013年可能技术不完善，违约高
 # 不同月份的违约也是不一样的，12月违约高
 # 填补缺失值改一下，不用的字段去掉
+
+userinfo_19
+userinfo_7
+# gdp数据
