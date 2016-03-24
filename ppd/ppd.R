@@ -227,17 +227,18 @@ test_model_df <- model_df %>% filter(idx %in% test_master$Idx)
 train_sparse_matrix <- sparse.model.matrix(target ~ .-1-idx, train_model_df)
 test_sparse_matrix <- sparse.model.matrix(~ .-1-idx, test_model_df)
 
-bst <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 5, eta = 0.1,
-              nrounds = 2000, max.depth = 50, objective = "binary:logistic", eval_metric = "auc",
-              early.stop.round = 100, scale_pos_weight = 0.01)
+bst <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 10, eta = 0.1,
+              nrounds = 2000, max.depth = 30, objective = "binary:logistic", eval_metric = "auc",
+              early.stop.round = 100, scale_pos_weight = 0.01, min_child_weight=1.5)
 # 0.743673+0.007338
 # 0.741335+0.010964
 # 0.747451+0.008305
-bst <- xgboost(data = train_sparse_matrix, label = train_model_df$target, max.depth = 50,
-               eta = 0.1, nround = 328,objective = "binary:logistic", eval_metric = "auc",
-               scale_pos_weight = 0.01)
+bst <- xgboost(data = train_sparse_matrix, label = train_model_df$target, max.depth = 30,
+               eta = 0.1, nround = 314,objective = "binary:logistic", eval_metric = "auc",
+               scale_pos_weight = 0.01, min_child_weight=1.5)
 # xgb.plot.deepness(model = bst)
-p <- predict(bst, test_sparse_matrix)
+p1 <- predict(bst, test_sparse_matrix)
+p2 <- predict(bst, test_sparse_matrix)
 
 importance_matrix <- xgb.importance(train_sparse_matrix@Dimnames[[2]], model = bst)
 xgb.plot.importance(importance_matrix)
@@ -264,9 +265,11 @@ test_class_cv_model <- train(trainY ~ ., smote_train,
                              trControl = cctrl1,
                              metric = "ROC",
                              # preProc = c("center", "scale"),
-                             tuneGrid = expand.grid(.alpha = seq(.05, 1, length = 15),
-                                                    .lambda = c((1:5)/10)))
-
+                             tuneGrid = expand.grid(.alpha = seq(.01, 0.5, length = 10),
+                                                    .lambda = c((1:3)/10)))
+p_glm <- predict(test_class_cv_model, 
+                 newdata=as.data.frame(as.matrix(test_sparse_matrix)), type = "prob")
+p_glm <- p_glm[,2]
 # fit_lm <- glm(target ~ ., family=binomial(link="logit"), data = train_model_df[, -c(1, 4)])
 # train_p_lm <- predict(fit_lm, newdata = train_model_df, type = "response")
 # p_lm <- predict(fit_lm, newdata = test_model_df, type = "response")
@@ -277,11 +280,11 @@ calc_auc_func <- function(p) {
   perf@y.values[[1]]
 }
 
-
+p <- (p1 + p_glm + p2)/3
 res <- test_model_df %>% select(idx) %>% mutate(score=round(p, 4))
 res[is.na(res)] <- 0
 names(res)[1] <- 'Idx'
-write.csv(res, 'res0324.csv', row.names=F)
+write.csv(res, 'res0325.csv', row.names=F)
 
 # fit_dt <- rpart(target ~ ., data = train_model_df[, -1],
 #                 control = rpart.control(cp = 0.1))
