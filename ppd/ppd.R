@@ -35,8 +35,10 @@ library(Matrix)
 # library(randomForest)
 # library(rpart)
 # library(ROCR)
-# library(caret)
-# library(glmnet)
+library(caret)
+library(glmnet)
+library(DMwR)
+library(Matrix)
 
 train_log_info <- read.csv("./Training Set/PPD_LogInfo_3_1_Training_Set.csv", as.is = T)
 train_master <- read.csv("./Training Set/PPD_Training_Master_GBK_3_1_Training_Set.csv", fileEncoding='gbk', as.is = T)
@@ -205,10 +207,10 @@ model_df[is.na(model_df$mean_update_gap), 'mean_update_gap'] <- median(model_df$
 # model_df$min_update_gap <- scale_func(model_df$min_update_gap)
 # model_df$max_update_gap <- scale_func(model_df$max_update_gap)
 # model_df$mean_update_gap <- scale_func(model_df$mean_update_gap)
-model_df$thirdparty_info_period2_3_log <- log1p(model_df$thirdparty_info_period2_3)
-model_df$thirdparty_info_period4_15_log <- log1p(model_df$thirdparty_info_period4_15)
-model_df$thirdparty_info_period2_15_log <- log1p(model_df$thirdparty_info_period2_15)
-model_df$thirdparty_info_period4_2_log <- log1p(model_df$thirdparty_info_period4_2)
+model_df$thirdparty_info_period2_3_log <- log1p(scale_func(model_df$thirdparty_info_period2_3))
+model_df$thirdparty_info_period4_15_log <- log1p(scale_func(model_df$thirdparty_info_period4_15))
+model_df$thirdparty_info_period2_15_log <- log1p(scale_func(model_df$thirdparty_info_period2_15))
+model_df$thirdparty_info_period4_2_log <- log1p(scale_func(model_df$thirdparty_info_period4_2))
 
 # thirdparty_info都应该标准化
 # i <- substr(names(model_df), 1, 10) == 'thirdparty'
@@ -240,20 +242,24 @@ p <- predict(bst, test_sparse_matrix)
 importance_matrix <- xgb.importance(train_sparse_matrix@Dimnames[[2]], model = bst)
 xgb.plot.importance(importance_matrix)
 
-glm_matrix <- train_sparse_matrix[, importance_matrix$Feature[1:100]]
+glm_matrix <- train_sparse_matrix[, importance_matrix$Feature]
 
 # inTrain <- createDataPartition(y = train_model_df$target, p = .75, list = FALSE)
 
 
-cctrl1 <- trainControl(method = "cv", number = 3,
+cctrl1 <- trainControl(method = "cv", number = 5,
                        # returnResamp = "all",
                        classProbs = T, summaryFunction = twoClassSummary)
-set.seed(849)
-trainY <- factor(train_model_df$target, labels=c('no', 'yes'))
-set.seed(9560)
-down_glm_matrix <- downSample(x = glm_matrix, y = trainY)
+                       # sampling = "smote")
 
-test_class_cv_model <- train(glm_matrix, trainY,
+# trainY <- factor(train_model_df$target, labels=c('no', 'yes'))
+
+glm_data <- cbind(as.matrix(glm_matrix), trainY=train_model_df$target) %>% as.data.frame
+glm_data$trainY <- factor(glm_data$trainY, labels=c('no', 'yes'))
+smote_train <- SMOTE(trainY ~ ., data  = glm_data)
+
+set.seed(849)
+test_class_cv_model <- train(trainY ~ ., smote_train,
                              method = "glmnet",
                              trControl = cctrl1,
                              metric = "ROC",
