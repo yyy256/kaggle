@@ -199,9 +199,13 @@ test_model_df <- model_df %>% filter(idx %in% test_master$Idx)
 train_sparse_matrix <- sparse.model.matrix(target ~ .-1-idx, train_model_df)
 test_sparse_matrix <- sparse.model.matrix(~ .-1-idx, test_model_df)
 
-bst <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 10, eta = 0.01,
-              nrounds = 5000, max.depth = 35, objective = "binary:logistic", eval_metric = "auc",
-              early.stop.round = 50, scale_pos_weight = 0.01)
+bst <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 10, eta = 0.05,
+              nrounds = 5000, max.depth = 15, objective = "binary:logistic", eval_metric = "auc",
+              early.stop.round = 200, scale_pos_weight = 0.01)
+
+bst <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 10, eta = 0.1,
+              nrounds = 5000, max.depth = 30, objective = "reg:linear", eval_metric = "auc",
+              early.stop.round = 100, scale_pos_weight = 0.01)
 
 fitControl <- trainControl(method = "cv", number = 10, repeats = 1, search = "random")
 # train a xgbTree model using caret::train
@@ -212,9 +216,16 @@ model <- train(train_sparse_matrix, train_model_df$target,
 # 0.741335+0.010964
 # 0.747451+0.008305
 # 0.749717+0.018587
-bst <- xgboost(data = train_sparse_matrix, label = train_model_df$target, max.depth = 35,
-               eta = 0.1, nround = 260,objective = "binary:logistic", eval_metric = "auc",
-               scale_pos_weight = 0.01)
+bst <- xgboost(data = train_sparse_matrix, label = train_model_df$target, max.depth = 50,
+               eta = 0.1, nround = 30,objective = "binary:logistic", eval_metric = "auc",
+               scale_pos_weight = 0.01, seed=30)
+bst1 <- xgboost(data = train_sparse_matrix, label = train_model_df$target, eta = 0.1,
+                nround = 328, max.depth = 50, objective = "reg:logistic", eval_metric = "auc",
+               scale_pos_weight = 0.01, 
+                subsample=0.9, colsample_bytree=0.8, seed=33)
+bst2 <- xgboost(data = train_sparse_matrix, label = train_model_df$target, eta = 0.05,
+              nrounds = 700, max.depth = 15, objective = "binary:logistic", eval_metric = "auc",
+              scale_pos_weight = 0.01)
 
 bst_rf <- xgb.cv(data = train_sparse_matrix[, importance_matrix$Feature], label = train_model_df$target,  max.depth = 35, 
                num_parallel_tree = 1000, subsample = 0.5, colsample_bytree =0.5, nrounds = 5000, 
