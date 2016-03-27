@@ -1,29 +1,3 @@
-# Master
-# 每一行代表一个样本（一笔成功成交借款），每个样本包含200多个各类字段。
-# idx：每一笔贷款的unique key，可以与另外2个文件里的idx相匹配。
-# UserInfo_*：借款人特征字段
-# WeblogInfo_*：Info网络行为字段
-# Education_Info*：学历学籍字段
-# ThirdParty_Info_PeriodN_*：第三方数据时间段N字段
-# SocialNetwork_*：社交网络字段
-# LinstingInfo：借款成交时间
-# Target：违约标签（1 = 贷款违约，0 = 正常还款）。测试集里不包含target字段。
-
-# Log_Info 有重复的行为
-# 借款人的登陆信息。
-# ListingInfo：借款成交时间 一个id对应一个时间 和user_info中一样
-# LogInfo1：操作代码 有35种代码
-# LogInfo2：操作类别 有15种类别
-# LogInfo3：登陆时间
-# idx：每一笔贷款的unique key
-
-# Userupdate_Info 有重复的行为
-# 借款人修改信息
-# ListingInfo1：借款成交时间 一个id对应一个时间
-# UserupdateInfo1：修改内容
-# UserupdateInfo2：修改时间
-# idx：每一笔贷款的unique key
-
 # setwd('d:/kaggle/ppd')
 setwd('kaggle/ppd/')
 library(dplyr)
@@ -48,6 +22,13 @@ test_log_info <- read.csv("./Test Set/PPD_LogInfo_2_Test_Set.csv", as.is = T)
 test_master <- read.csv("./Test Set/PPD_Master_GBK_2_Test_Set.csv", fileEncoding='gbk', as.is = T)
 test_user_info <- read.csv("./Test Set/PPD_Userupdate_Info_2_Test_Set.csv")
 
+train_master$ListingInfo <- ymd(train_master$ListingInfo)
+test_master$ListingInfo <- dmy(test_master$ListingInfo)
+
+log_info <- bind_rows(train_log_info, test_log_info)
+master <- bind_rows(train_master %>% select(-target), test_master)
+user_info <- bind_rows(train_user_info, test_user_info)
+
 pre_process_func <- function(log_info, master, user_info){
   names(log_info) <- tolower(names(log_info))
   names(master) <- tolower(names(master))
@@ -57,14 +38,51 @@ pre_process_func <- function(log_info, master, user_info){
   log_info$loginfo3 <- ymd(log_info$loginfo3)
   user_info$listinginfo1 <- ymd(user_info$listinginfo1)
   user_info$userupdateinfo2 <- ymd(user_info$userupdateinfo2)
-  if (nrow(master) > 25000){
-    master$listinginfo <- ymd(master$listinginfo)
-    } else {
-    master$listinginfo <- dmy(master$listinginfo)
-    }
+
   master$year <- as.factor(year(master$listinginfo))
   master$month <- as.factor(month(master$listinginfo))
   master$day <- as.factor(day(master$listinginfo))
+
+  # 合并一些类别
+  master[master$socialnetwork_1 != 0, 'socialnetwork_1'] <- 1
+  master[master$socialnetwork_13 != 0, 'socialnetwork_13'] <- 1
+  master[master$socialnetwork_14 != 0, 'socialnetwork_14'] <- 1
+  master[master$socialnetwork_17 != 0, 'socialnetwork_17'] <- 1
+  master[master$socialnetwork_3 != -1, 'socialnetwork_3'] <- 0
+  master[master$socialnetwork_4 != -1, 'socialnetwork_4'] <- 0
+  master[master$socialnetwork_5 != -1, 'socialnetwork_5'] <- 0
+  master[master$socialnetwork_6 != -1, 'socialnetwork_6'] <- 0
+  master[master$socialnetwork_8 != -1, 'socialnetwork_8'] <- 0
+  master[master$socialnetwork_9 != -1, 'socialnetwork_9'] <- 0
+  master[master$socialnetwork_10 != -1, 'socialnetwork_10'] <- 0
+  master[master$socialnetwork_11 != -1, 'socialnetwork_11'] <- 0
+  # 要去掉的变量userinfo_3, userinfo_11, userinfo_12, userinfo_13, userinfo_24, 教育只取Education_Info3,
+  # WeblogInfo_1 WeblogInfo_3去掉空值太多
+  delete_vars <- c('userinfo_3', 'userinfo_11', 'userinfo_12', 'userinfo_13', 'userinfo_24', paste0('education_info', c(1:2, 4:8)),
+    'webloginfo_1', 'webloginfo_3')
+  master <- master %>% select(-one_of(delete_vars))
+  # 把UserInfo_19里面的省、市、自治区这几个字去掉
+  master$userinfo_19 <- gsub('(省)|(市)|(自治区)|(维吾尔)|(回族)|(壮族)', '', master$userinfo_19)
+  # UserInfo_7是否等于UserInfo_19
+  master$is_equal_userinfo7_userinfo19 <- as.numeric(master$userinfo_7==master$userinfo_19)
+  master$is_equal_userinfo2_userinfo4 <- as.numeric(master$userinfo_2==master$userinfo_4)
+
+  # UserInfo_3区分度似乎不是很大 UserInfo_11-13没用
+  # UserInfo_9里面的两边空格去掉
+  master$userinfo_9 <- str_trim(master$userinfo_9)
+  # UserInfo_8去掉市
+  # UserInfo_22婚姻信息 不详算成D，新增一列初婚、再婚算成已婚，离婚算成未婚
+  master[master$userinfo_22=='不详', 'new_userinfo_22'] <- 'D'
+  master[master$userinfo_22=='离婚', 'new_userinfo_22'] <- '未婚'
+  master[master$userinfo_22 %in% c('初婚', '再婚'), 'new_userinfo_22'] <- '已婚'
+  master[is.na(master$new_userinfo_22), 'new_userinfo_22'] <- master[is.na(master$new_userinfo_22), 'userinfo_22']
+  # UserInfo_23教育信息，合并一部分信息
+  master[master$userinfo_23=='不详', 'userinfo_23'] <- 'D'
+  master[!master$userinfo_23 %in% c('D', 'G', 'AB', 'O', 'M', '不详', 'AK', 'H', 'Y', '专科毕业', '大学本科（简称“大学'), 'userinfo_23'] <- 'other'
+
+  # UserInfo_1, UserInfo_5, UserInfo_6, UserInfo_14，UserInfo_15，UserInfo_14-17应该看作因子变量
+  i <- names(master) %in% c(paste0('userinfo_', c(1,5,6,14:17)), paste0('socialnetwork', 1:17))
+  master[i] <- lapply(master[i], as.factor)
 
   # 将修改内容都变成小写，去掉两边空格
   user_info$userupdateinfo1 <- str_trim(tolower(user_info$userupdateinfo1))
@@ -76,57 +94,13 @@ pre_process_func <- function(log_info, master, user_info){
   return (list(log_info, master, user_info))
 }
 
-train_df <- pre_process_func(train_log_info, train_master, train_user_info)
-test_df <- pre_process_func(test_log_info, test_master, test_user_info)
-
-
-# lapply(log_info, n_distinct)
-# lapply(user_info, n_distinct)
-
-# char_var <- names(train)[sapply(train, class)=="character"] # 查看字符型的变量
-# lapply(char_var, function(x) n_distinct(train[, x]))
-# lapply(train, n_distinct)
-
-# train1 <- train %>% left_join(user_info) %>% left_join(log_info %>% select(-Listinginfo1))
-
-# log_info %>% distinct() %>% nrow
-# nrow(log_info)
-# user_info %>% distinct() %>% nrow
-# nrow(user_info)
-
-# # select_vars()
-
-# names(train)[sapply(train, n_distinct)==1] # WeblogInfo_10是没用的
-
-# # train %>% select_("UserInfo_2", "UserInfo_4") %>% select(starts_with("UserInfo")) %>% head()
-# train[, names(train) %in% char_var] %>% select(starts_with("WeblogInfo")) %>% head()
-
-# D应该代表缺失
-# UserInfo_8 手机运营商 还需要去除空格
-# UserInfo_21 婚姻状况 userinfo_22
-# UserInfo_22 学历状况
-# UserInfo_23 具体地址 > 学历状况
-# Education_Info2 "E"  "AM" "A"  "AN" "AQ" "U"  "B"
-# Education_Info3 "E"    "毕业" "结业" E似乎代表空值
-# Education_Info4 "E"  "T"  "AR" "F"  "V"  "AE"
-# Education_Info6 "E"  "A"  "AM" "AQ" "U"  "B"
-# Education_Info7 "E"    "不详" 没用的字段
-# Education_Info8 "E"    "T"    "F"    "V"    "AE"   "80"   "不详"
-
-# WeblogInfo_19 "I" "E" "F" "D" "J" "G" "H" ""
-# WeblogInfo_20
-# WeblogInfo_21 "D" "C" "A" "B" ""
-
-# 我要借款 我要理财
-# 上次修改内容的最大时间间隔，最小时间间隔，平均时间间隔
-
-# 之前修改了几种信息 (无用)
-# a1 <- user_info %>% group_by(idx) %>% summarise(f=n_distinct(userupdateinfo1)) %>%
-#   left_join(train %>% select(idx, target))
-# boxplot(f ~ target, data = a1)
-# 修改了那种信息，用one-hot-encoding
-# 婚姻
-# 学历
+df <- pre_process_func(log_info, master, user_info)
+# UserInfo_2,4,8,20是否相等
+# 城市等级
+# 是否为省会
+# SocialNetwork_1去掉, SocialNetwork_3 -1为一类，其它为一类
+# 不用第三方数据(thirdparty)做一个模型
+# 用最重要的变量做个随机森林
 
 compute_var <- function(log_info, master, user_info){
   # 购买时间间隔；修改过几次lastupdatedate, realname, districtid, provinceid, qq
@@ -169,8 +143,6 @@ compute_var <- function(log_info, master, user_info){
                                                m2=min(loginfo3),
                                                f_log=n()-1) %>%
     mutate(m_log_gap=as.numeric(difftime(m1, m2, units='days'))/f_log) %>% select(-m1, -m2)
-  master[master$userinfo_23=="不详", "userinfo_23"] <- 'D'
-  master[master$userinfo_22=="不详", "userinfo_22"] <- 'D'
   # master_df <- master %>% select(idx, userinfo_22, userinfo_21, userinfo_23, education_info3) %>%
   #   mutate(userinfo_22=as.factor(userinfo_22), userinfo_23=as.factor(userinfo_23), education_info3=as.factor(education_info3))
   vars <- names(master)[sapply(master, function(x) sum(is.na(x))==0)]
@@ -188,11 +160,11 @@ scale_func <- function(x){
   (x-min(x)) / (max(x)-min(x))
 }
 
-log_info <- bind_rows(train_df[[1]], test_df[[1]])
-user_info <- bind_rows(train_df[[3]], test_df[[3]])
-master <- bind_rows(train_df[[2]] %>% select(-target), test_df[[2]])
+# log_info <- bind_rows(train_df[[1]], test_df[[1]])
+# user_info <- bind_rows(train_df[[3]], test_df[[3]])
+# master <- bind_rows(train_df[[2]] %>% select(-target), test_df[[2]])
 
-model_df <- compute_var(log_info, master, user_info)
+model_df <- compute_var(df[[1]], df[[2]], df[[3]])
 
 # 填补缺失值
 model_df[is.na(model_df$min_log_gap), 'min_log_gap'] <- median(model_df$min_log_gap, na.rm = T)
@@ -215,8 +187,8 @@ model_df$thirdparty_info_period4_2_log <- log1p(scale_func(model_df$thirdparty_i
 # thirdparty_info都应该标准化
 # i <- substr(names(model_df), 1, 10) == 'thirdparty'
 # model_df[i] <- lapply(model_df[i], scale_func)
-
 model_df[is.na(model_df)] <- 0
+model_df <- model_df %>% left_join(lola_df, by=c('userinfo_2'='city'))
 # sparse_matrix_df <- sparse.model.matrix(~.-1, model_df)
 names(model_df)[match(c("loginfo1-10", "loginfo1-4"), names(model_df))] <- c('loginfo1_10', 'loginfo1_4')
 
@@ -227,18 +199,31 @@ test_model_df <- model_df %>% filter(idx %in% test_master$Idx)
 train_sparse_matrix <- sparse.model.matrix(target ~ .-1-idx, train_model_df)
 test_sparse_matrix <- sparse.model.matrix(~ .-1-idx, test_model_df)
 
-bst <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 10, eta = 0.1,
-              nrounds = 2000, max.depth = 30, objective = "binary:logistic", eval_metric = "auc",
-              early.stop.round = 100, scale_pos_weight = 0.01, min_child_weight=1.5)
+bst <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 10, eta = 0.01,
+              nrounds = 5000, max.depth = 35, objective = "binary:logistic", eval_metric = "auc",
+              early.stop.round = 50, scale_pos_weight = 0.01)
+
+fitControl <- trainControl(method = "cv", number = 10, repeats = 1, search = "random")
+# train a xgbTree model using caret::train
+model <- train(train_sparse_matrix, train_model_df$target, 
+               method = "xgbTree", trControl = fitControl)
+
 # 0.743673+0.007338
 # 0.741335+0.010964
 # 0.747451+0.008305
-bst <- xgboost(data = train_sparse_matrix, label = train_model_df$target, max.depth = 30,
-               eta = 0.1, nround = 314,objective = "binary:logistic", eval_metric = "auc",
-               scale_pos_weight = 0.01, min_child_weight=1.5)
+# 0.749717+0.018587
+bst <- xgboost(data = train_sparse_matrix, label = train_model_df$target, max.depth = 35,
+               eta = 0.1, nround = 260,objective = "binary:logistic", eval_metric = "auc",
+               scale_pos_weight = 0.01)
+
+bst_rf <- xgb.cv(data = train_sparse_matrix[, importance_matrix$Feature], label = train_model_df$target,  max.depth = 35, 
+               num_parallel_tree = 1000, subsample = 0.5, colsample_bytree =0.5, nrounds = 5000, 
+               objective = "binary:logistic", early.stop.round = 50, eval_metric = "auc",nfold = 10)
 # xgb.plot.deepness(model = bst)
 p1 <- predict(bst, test_sparse_matrix)
 p2 <- predict(bst, test_sparse_matrix)
+
+p_bst_train <- predict(bst, train_sparse_matrix)
 
 importance_matrix <- xgb.importance(train_sparse_matrix@Dimnames[[2]], model = bst)
 xgb.plot.importance(importance_matrix)
@@ -265,26 +250,29 @@ test_class_cv_model <- train(trainY ~ ., smote_train,
                              trControl = cctrl1,
                              metric = "ROC",
                              # preProc = c("center", "scale"),
-                             tuneGrid = expand.grid(.alpha = seq(.01, 0.5, length = 10),
-                                                    .lambda = c((1:3)/10)))
-p_glm <- predict(test_class_cv_model, 
-                 newdata=as.data.frame(as.matrix(test_sparse_matrix)), type = "prob")
-p_glm <- p_glm[,2]
+                             tuneGrid = expand.grid(.alpha = seq(.001, 0.005, length = 3),
+                                                    .lambda = c((1:2)/20)))
+
+p_train <- predict(test_class_cv_model, glm_data, type='prob')[, 2]
+p_glm <- predict(test_class_cv_model,
+                 newdata=as.data.frame(as.matrix(test_sparse_matrix)), type = "prob")[, 2]
+p <- p_glm[,2]
 # fit_lm <- glm(target ~ ., family=binomial(link="logit"), data = train_model_df[, -c(1, 4)])
 # train_p_lm <- predict(fit_lm, newdata = train_model_df, type = "response")
 # p_lm <- predict(fit_lm, newdata = test_model_df, type = "response")
 
-calc_auc_func <- function(p) {
-  ppred <- prediction(p, train_model_df$target)
+# glm_data$trainY
+calc_auc_func <- function(p, real) {
+  pred <- prediction(p, real)
   perf <- performance(pred, "auc")
   perf@y.values[[1]]
 }
 
-p <- (p1 + p_glm + p2)/3
+p <- p1*0.999 + p_glm*0.001
 res <- test_model_df %>% select(idx) %>% mutate(score=round(p, 4))
 res[is.na(res)] <- 0
 names(res)[1] <- 'Idx'
-write.csv(res, 'res0325.csv', row.names=F)
+write.csv(res, paste0('res1', Sys.Date(), '.csv'), row.names=F)
 
 # fit_dt <- rpart(target ~ ., data = train_model_df[, -1],
 #                 control = rpart.control(cp = 0.1))
@@ -299,25 +287,6 @@ write.csv(res, 'res0325.csv', row.names=F)
 # model <- xgboost(data = dtrain, nrounds = 2, objective = "binary:logistic")
 
 sparse_matrix <- sparse.model.matrix()
-train_master %>% select(one_of(paste0('UserInfo_', c(2, 4, 7, 8, 9, 19,20, 24)))) %>% head(1000) %>% View
-
-train_master %>% select(starts_with('thirdparty_info')) %>% head()
-sapply(train_master %>% select(starts_with('thirdparty_info')), n_distinct)
-
-train_master %>% select(starts_with('Educa')) %>% filter(Education_Info1==1) %>%
-  head(1000) %>% View
-train_master %>% select(starts_with('Educa')) %>% filter(Education_Info1==0) %$% table(Education_Info3)
-
-train_master %>% select(Education_Info3, UserInfo_23) %>% filter(Education_Info3=="毕业") %$%
-  unique(UserInfo_23)
-
-train_master %>% select(starts_with('socialnetwork')) %>%
-  head(1000) %>% View
-
-sapply(train_master %>% select(starts_with('Soci')), n_distinct)
-
-table(train_master$ThirdParty_Info_Period2_6)
-
 # 2013年可能技术不完善，违约高
 # 不同月份的违约也是不一样的，12月违约高
 # 填补缺失值改一下，不用的字段去掉

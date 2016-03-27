@@ -107,4 +107,7 @@ vignettes/*.pdf
 .httr-oauth
 
 # csv
-.csv
+*.csv
+
+# txt
+*.txt
