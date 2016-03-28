@@ -188,7 +188,7 @@ model_df$thirdparty_info_period4_2_log <- log1p(scale_func(model_df$thirdparty_i
 # i <- substr(names(model_df), 1, 10) == 'thirdparty'
 # model_df[i] <- lapply(model_df[i], scale_func)
 model_df[is.na(model_df)] <- 0
-model_df <- model_df %>% left_join(lola_df, by=c('userinfo_2'='city'))
+# model_df <- model_df %>% left_join(lola_df, by=c('userinfo_2'='city'))
 # sparse_matrix_df <- sparse.model.matrix(~.-1, model_df)
 names(model_df)[match(c("loginfo1-10", "loginfo1-4"), names(model_df))] <- c('loginfo1_10', 'loginfo1_4')
 
@@ -199,9 +199,32 @@ test_model_df <- model_df %>% filter(idx %in% test_master$Idx)
 train_sparse_matrix <- sparse.model.matrix(target ~ .-1-idx, train_model_df)
 test_sparse_matrix <- sparse.model.matrix(~ .-1-idx, test_model_df)
 
-bst <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 10, eta = 0.05,
+bst <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 10, eta = 0.1,
               nrounds = 5000, max.depth = 15, objective = "binary:logistic", eval_metric = "auc",
-              early.stop.round = 200, scale_pos_weight = 0.01)
+              early.stop.round = 200, scale_pos_weight =27802/2198)
+
+########################## work
+# 经济增长率
+thirdparty_df <- model_df %>% select(starts_with('thirdparty'))
+names(thirdparty_df) <- paste0(names(thirdparty_df), '_init')
+
+num_func <- function(x){
+    quan3 <- quantile(x, 0.8, na.rm=T)
+    as.factor(ifelse(x > quan3, -2, x))
+}
+i <- grepl('thirdparty_info', names(model_df))
+model_df[i] <- lapply(model_df[i], num_func)
+
+model_df <- bind_cols(model_df, thirdparty_df)
+names(model_df) <- gsub('-', '_', names(model_df))
+# model_df$category1 <- as.factor(ifelse(model_df$thirdparty_info_period2_2 > 68, 99999,
+#                              model_df$thirdparty_info_period2_2))
+bst <- xgboost(data = train_sparse_matrix, label = train_model_df$target, eta = 0.1,
+              nround = 337, max.depth = 15, objective = "binary:logistic", eval_metric = "auc",
+              scale_pos_weight = 27802/2198)
+importance_matrix <- xgb.importance(train_sparse_matrix@Dimnames[[2]], model = bst)
+View(importance_matrix)
+########################## work
 
 bst <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 10, eta = 0.1,
               nrounds = 5000, max.depth = 30, objective = "reg:linear", eval_metric = "auc",
@@ -209,7 +232,7 @@ bst <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold =
 
 fitControl <- trainControl(method = "cv", number = 10, repeats = 1, search = "random")
 # train a xgbTree model using caret::train
-model <- train(train_sparse_matrix, train_model_df$target, 
+model <- train(train_sparse_matrix, train_model_df$target,
                method = "xgbTree", trControl = fitControl)
 
 # 0.743673+0.007338
@@ -221,14 +244,14 @@ bst <- xgboost(data = train_sparse_matrix, label = train_model_df$target, max.de
                scale_pos_weight = 0.01, seed=30)
 bst1 <- xgboost(data = train_sparse_matrix, label = train_model_df$target, eta = 0.1,
                 nround = 328, max.depth = 50, objective = "reg:logistic", eval_metric = "auc",
-               scale_pos_weight = 0.01, 
+               scale_pos_weight = 0.01,
                 subsample=0.9, colsample_bytree=0.8, seed=33)
 bst2 <- xgboost(data = train_sparse_matrix, label = train_model_df$target, eta = 0.05,
               nrounds = 700, max.depth = 15, objective = "binary:logistic", eval_metric = "auc",
               scale_pos_weight = 0.01)
 
-bst_rf <- xgb.cv(data = train_sparse_matrix[, importance_matrix$Feature], label = train_model_df$target,  max.depth = 35, 
-               num_parallel_tree = 1000, subsample = 0.5, colsample_bytree =0.5, nrounds = 5000, 
+bst_rf <- xgb.cv(data = train_sparse_matrix[, importance_matrix$Feature], label = train_model_df$target,  max.depth = 35,
+               num_parallel_tree = 1000, subsample = 0.5, colsample_bytree =0.5, nrounds = 5000,
                objective = "binary:logistic", early.stop.round = 50, eval_metric = "auc",nfold = 10)
 # xgb.plot.deepness(model = bst)
 p1 <- predict(bst, test_sparse_matrix)
