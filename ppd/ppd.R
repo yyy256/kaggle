@@ -225,10 +225,24 @@ bst <- xgboost(data = train_sparse_matrix, label = train_model_df$target, eta = 
 importance_matrix <- xgb.importance(train_sparse_matrix@Dimnames[[2]], model = bst)
 View(importance_matrix)
 ########################## work
+# 0.751307
+bstt <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 10, eta = 0.01,
+              nrounds = 500000, max.depth = 20, objective = "binary:logistic", eval_metric = "auc",
+              early.stop.round = 500, scale_pos_weight = 0.01)
+Sys.time()
+bsttt <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 10, eta = 0.01,
+               nrounds = 500000, max.depth = 30, objective = "binary:logistic", eval_metric = "auc",
+               early.stop.round = 500, scale_pos_weight = 0.01)
+# Sys
+bsttt <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 10, eta = 0.01,
+                nrounds = 500000, max.depth = 25, objective = "binary:logistic", eval_metric = "auc",
+                early.stop.round = 500, scale_pos_weight = 0.02)
+Sys.time()
+
 
 bst <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 10, eta = 0.1,
-              nrounds = 5000, max.depth = 30, objective = "reg:linear", eval_metric = "auc",
-              early.stop.round = 100, scale_pos_weight = 0.01)
+              nrounds = 5000, max.depth = 30, objective = "binary:logistic", eval_metric = "auc",
+              early.stop.round = 100, scale_pos_weight = 0.005)
 
 fitControl <- trainControl(method = "cv", number = 10, repeats = 1, search = "random")
 # train a xgbTree model using caret::train
@@ -239,8 +253,9 @@ model <- train(train_sparse_matrix, train_model_df$target,
 # 0.741335+0.010964
 # 0.747451+0.008305
 # 0.749717+0.018587
-bst <- xgboost(data = train_sparse_matrix, label = train_model_df$target, max.depth = 50,
-               eta = 0.1, nround = 30,objective = "binary:logistic", eval_metric = "auc",
+# [2369]	train-auc:0.868506+0.000843	test-auc:0.749920+0.015443
+bst <- xgboost(data = train_sparse_matrix, label = train_model_df$target, max.depth = 20,
+               eta = 0.01, nround = 3089,objective = "binary:logistic", eval_metric = "auc",
                scale_pos_weight = 0.01, seed=30)
 bst1 <- xgboost(data = train_sparse_matrix, label = train_model_df$target, eta = 0.1,
                 nround = 328, max.depth = 50, objective = "reg:logistic", eval_metric = "auc",
@@ -255,7 +270,7 @@ bst_rf <- xgb.cv(data = train_sparse_matrix[, importance_matrix$Feature], label 
                objective = "binary:logistic", early.stop.round = 50, eval_metric = "auc",nfold = 10)
 # xgb.plot.deepness(model = bst)
 p1 <- predict(bst, test_sparse_matrix)
-p2 <- predict(bst, test_sparse_matrix)
+p2 <- predict(bstt, test_sparse_matrix)
 
 p_bst_train <- predict(bst, train_sparse_matrix)
 
@@ -303,7 +318,7 @@ calc_auc_func <- function(p, real) {
 }
 
 p <- p1*0.999 + p_glm*0.001
-res <- test_model_df %>% select(idx) %>% mutate(score=round(p, 4))
+res <- test_model_df %>% select(idx) %>% mutate(score=round(p1, 4))
 res[is.na(res)] <- 0
 names(res)[1] <- 'Idx'
 write.csv(res, paste0('res1', Sys.Date(), '.csv'), row.names=F)
@@ -328,3 +343,4 @@ sparse_matrix <- sparse.model.matrix()
 userinfo_19
 userinfo_7
 # gdp数据
+# 经纬度聚类
