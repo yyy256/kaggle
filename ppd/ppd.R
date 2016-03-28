@@ -232,7 +232,7 @@ bstt <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold 
 Sys.time()
 bsttt <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 10, eta = 0.01,
                nrounds = 500000, max.depth = 30, objective = "binary:logistic", eval_metric = "auc",
-               early.stop.round = 500, scale_pos_weight = 0.01)
+               early.stop.round = 500, scale_pos_weight = 0.005)
 # Sys
 bsttt <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 10, eta = 0.01,
                 nrounds = 500000, max.depth = 25, objective = "binary:logistic", eval_metric = "auc",
