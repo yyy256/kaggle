@@ -173,6 +173,12 @@ model_df[is.na(model_df$mean_log_gap), 'mean_log_gap'] <- median(model_df$mean_l
 model_df[is.na(model_df$min_update_gap), 'min_update_gap'] <- median(model_df$min_update_gap, na.rm = T)
 model_df[is.na(model_df$max_update_gap), 'max_update_gap'] <- median(model_df$max_update_gap, na.rm = T)
 model_df[is.na(model_df$mean_update_gap), 'mean_update_gap'] <- median(model_df$mean_update_gap, na.rm = T)
+
+model_df[is.na(model_df$f_log), 'f_log'] <- median(model_df$f_log, na.rm = T)
+model_df[is.na(model_df$m_log_gap), 'm_log_gap'] <- median(model_df$m_log_gap, na.rm = T)
+model_df[is.na(model_df$f_user), 'f_user'] <- median(model_df$f_user, na.rm = T)
+model_df[is.na(model_df$f_log), 'm_update_gap'] <- median(model_df$m_update_gap, na.rm = T)
+
 # model_df$min_log_gap <- scale_func(model_df$min_log_gap)
 # model_df$max_log_gap <- scale_func(model_df$max_log_gap)
 # model_df$mean_log_gap <- scale_func(model_df$mean_log_gap)
@@ -192,6 +198,21 @@ model_df[is.na(model_df)] <- 0
 # sparse_matrix_df <- sparse.model.matrix(~.-1, model_df)
 names(model_df)[match(c("loginfo1-10", "loginfo1-4"), names(model_df))] <- c('loginfo1_10', 'loginfo1_4')
 
+i <- sapply(model_df, is.factor)
+model_df[i] <- lapply(model_df[i], as.numeric)
+
+model_df <- model_df %>% select(-starts_with('loginfo'), -starts_with('userupdateinfo'))
+xgb_data <- xgb.DMatrix(data=as.matrix(model_df %>% filter(idx %in% train_master$Idx)), label = train_master$target)
+bst <- xgb.cv(data=xgb_data, nfold = 10, eta = 0.1,
+              nrounds = 5000, max.depth = 15, objective = "binary:logistic", eval_metric = "auc",
+              early.stop.round = 200, scale_pos_weight =0.01)
+# train-auc:0.920227+0.001065	test-auc:0.747250+0.013514
+bst <- xgb.train(data=xgb_data, eta = 0.1,
+              nround = 400, max.depth = 15, objective = "binary:logistic", eval_metric = "auc",
+              scale_pos_weight =0.01)
+
+importance_matrix <- xgb.importance(names(model_df), model = bst)
+
 train_model_df <- model_df %>% filter(idx %in% train_master$Idx) %>%
   left_join(train_master %>% select(Idx, target), by=c("idx"="Idx"))
 test_model_df <- model_df %>% filter(idx %in% test_master$Idx)
@@ -200,8 +221,8 @@ train_sparse_matrix <- sparse.model.matrix(target ~ .-1-idx, train_model_df)
 test_sparse_matrix <- sparse.model.matrix(~ .-1-idx, test_model_df)
 
 bst <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 10, eta = 0.1,
-              nrounds = 5000, max.depth = 15, objective = "binary:logistic", eval_metric = "auc",
-              early.stop.round = 200, scale_pos_weight =27802/2198)
+              nrounds = 5000, max.depth = 9, objective = "binary:logistic", eval_metric = "auc",
+              early.stop.round = 60, scale_pos_weight = 0.01)
 
 ########################## work
 # 经济增长率
@@ -220,8 +241,8 @@ names(model_df) <- gsub('-', '_', names(model_df))
 # model_df$category1 <- as.factor(ifelse(model_df$thirdparty_info_period2_2 > 68, 99999,
 #                              model_df$thirdparty_info_period2_2))
 bst <- xgboost(data = train_sparse_matrix, label = train_model_df$target, eta = 0.1,
-              nround = 337, max.depth = 15, objective = "binary:logistic", eval_metric = "auc",
-              scale_pos_weight = 27802/2198)
+              nround = 100, max.depth = 15, objective = "binary:logistic", eval_metric = "auc",
+              scale_pos_weight = 0.01)
 importance_matrix <- xgb.importance(train_sparse_matrix@Dimnames[[2]], model = bst)
 View(importance_matrix)
 ########################## work
@@ -254,9 +275,9 @@ model <- train(train_sparse_matrix, train_model_df$target,
 # 0.747451+0.008305
 # 0.749717+0.018587
 # [2369]	train-auc:0.868506+0.000843	test-auc:0.749920+0.015443
-bst <- xgboost(data = train_sparse_matrix, label = train_model_df$target, max.depth = 20,
-               eta = 0.01, nround = 3089,objective = "binary:logistic", eval_metric = "auc",
-               scale_pos_weight = 0.01, seed=30)
+bst <- xgboost(data = train_sparse_matrix, label = train_model_df$target, max.depth = 9,
+               eta = 0.1, nround = 277,objective = "reg:logistic", eval_metric = "auc",
+               scale_pos_weight = 0.01, seed=824)
 bst1 <- xgboost(data = train_sparse_matrix, label = train_model_df$target, eta = 0.1,
                 nround = 328, max.depth = 50, objective = "reg:logistic", eval_metric = "auc",
                scale_pos_weight = 0.01,
@@ -269,8 +290,14 @@ bst_rf <- xgb.cv(data = train_sparse_matrix[, importance_matrix$Feature], label 
                num_parallel_tree = 1000, subsample = 0.5, colsample_bytree =0.5, nrounds = 5000,
                objective = "binary:logistic", early.stop.round = 50, eval_metric = "auc",nfold = 10)
 # xgb.plot.deepness(model = bst)
-p1 <- predict(bst, test_sparse_matrix)
-p2 <- predict(bstt, test_sparse_matrix)
+p1 <- predict(bst, test_sparse_matrix) # 0.747745+0.00
+p2 <- predict(bst, test_sparse_matrix) # :0.745305+0.017916
+# p3 <- predict(bst, test_sparse_matrix) # 0.747745+0.00
+
+best1 <- read.csv('res0324.csv')
+best2 <- read.csv('res12016-03-27.csv')
+
+p <- best1$score*0.4 + p1*0.4 + best2$score*0.1 + p2 * 0.1
 
 p_bst_train <- predict(bst, train_sparse_matrix)
 
@@ -318,7 +345,7 @@ calc_auc_func <- function(p, real) {
 }
 
 p <- p1*0.999 + p_glm*0.001
-res <- test_model_df %>% select(idx) %>% mutate(score=round(p1, 4))
+res <- test_model_df %>% select(idx) %>% mutate(score=round(p, 4))
 res[is.na(res)] <- 0
 names(res)[1] <- 'Idx'
 write.csv(res, paste0('res1', Sys.Date(), '.csv'), row.names=F)
