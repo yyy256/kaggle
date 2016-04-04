@@ -381,3 +381,4 @@ write.csv(res, 'res.csv', row.names=F)
 # userinfo_7
 # # gdp数据
 # # 经纬度聚类
+# 直辖市 省会 人口数量 东部西部 沿海与否
