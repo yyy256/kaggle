@@ -348,11 +348,11 @@ p <- predict(mst, test_sparse_matrix)
 # # p_lm <- predict(fit_lm, newdata = test_model_df, type = "response")
 # 
 # # glm_data$trainY
-# calc_auc_func <- function(p, real) {
-#   pred <- prediction(p, real)
-#   perf <- performance(pred, "auc")
-#   perf@y.values[[1]]
-# }
+calc_auc_func <- function(p, real) {
+  pred <- prediction(p, real)
+  perf <- performance(pred, "auc")
+  perf@y.values[[1]]
+}
 # 
 # p <- p1*0.999 + p_glm*0.001
 res <- test_model_df %>% select(idx) %>% mutate(score=round(p, 4))
