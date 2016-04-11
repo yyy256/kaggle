@@ -36,6 +36,7 @@ binning_func <- function(x) {
   if (result=="No Bins") NULL else result$bands
 }
 bands <- lapply(binning_name, binning_func)
+names(bands) <- binning_name
 
 log_info <- bind_rows(train_log_info, test_log_info)
 master <- bind_rows(train_master %>% select(-target), test_master)
