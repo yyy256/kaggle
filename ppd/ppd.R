@@ -9,10 +9,13 @@ library(Matrix)
 # library(randomForest)
 # library(rpart)
 # library(ROCR)
-library(caret)
-library(glmnet)
-library(DMwR)
-library(Matrix)
+# library(caret)
+# library(glmnet)
+# library(DMwR)
+load('mz.RData')
+load('lola_df.RData')
+load('city_info.RData')
+
 
 train_log_info <- read.csv("./Training Set/PPD_LogInfo_3_1_Training_Set.csv", as.is = T)
 train_master <- read.csv("./Training Set/PPD_Training_Master_GBK_3_1_Training_Set.csv", fileEncoding='gbk', as.is = T)
@@ -25,9 +28,34 @@ test_user_info <- read.csv("./Test Set/PPD_Userupdate_Info_2_Test_Set.csv")
 train_master$ListingInfo <- ymd(train_master$ListingInfo)
 test_master$ListingInfo <- dmy(test_master$ListingInfo)
 
+# 将大于10种的分段
+binning_name <- names(train_master)[sapply(train_master, function(x) n_distinct(x) > 10 & !is.character(x))]
+binning_name <- binning_name[-c(1, length(binning_name))]
+binning_func <- function(x) {
+  result=smbinning(df=train_master,y="target",x=x,p=0.05) 
+  if (result=="No Bins") NULL else result$bands
+}
+bands <- lapply(binning_name, binning_func)
+
 log_info <- bind_rows(train_log_info, test_log_info)
 master <- bind_rows(train_master %>% select(-target), test_master)
 user_info <- bind_rows(train_user_info, test_user_info)
+
+clean_city_func <- function(x){
+  x <- sub('(市)|(自治州)', '', x)
+
+  for (n in mz){
+    x <- sub(n, '', x)
+  }
+  return (x)
+}
+
+clean_province_func <- function(x){
+  sub('(省)|(自治区)|(壮族)(回族)|(维吾尔)', '', x)
+}
+
+city_name <- c('userinfo_2', 'userinfo_4', 'userinfo_8', 'userinfo_20')
+province_name <- c('userinfo_7', 'userinfo_19')
 
 pre_process_func <- function(log_info, master, user_info){
   names(log_info) <- tolower(names(log_info))
@@ -61,8 +89,15 @@ pre_process_func <- function(log_info, master, user_info){
   delete_vars <- c('userinfo_3', 'userinfo_11', 'userinfo_12', 'userinfo_13', 'userinfo_24', paste0('education_info', c(1:2, 4:8)),
     'webloginfo_1', 'webloginfo_3')
   master <- master %>% select(-one_of(delete_vars))
-  # 把UserInfo_19里面的省、市、自治区这几个字去掉
-  master$userinfo_19 <- gsub('(省)|(市)|(自治区)|(维吾尔)|(回族)|(壮族)', '', master$userinfo_19)
+
+  i <- names(master) %in% city_name
+  master[i] <- lapply(master[i], clean_city_func)
+
+  i <- names(master) %in% province_name
+  master[i] <- lapply(master[i], clean_province_func)
+
+  # # 把UserInfo_19里面的省、市、自治区这几个字去掉
+  # master$userinfo_19 <- gsub('(省)|(市)|(自治区)|(维吾尔)|(回族)|(壮族)', '', master$userinfo_19)
   # UserInfo_7是否等于UserInfo_19
   master$is_equal_userinfo7_userinfo19 <- as.numeric(master$userinfo_7==master$userinfo_19)
   master$is_equal_userinfo2_userinfo4 <- as.numeric(master$userinfo_2==master$userinfo_4)
@@ -95,6 +130,9 @@ pre_process_func <- function(log_info, master, user_info){
 }
 
 df <- pre_process_func(log_info, master, user_info)
+
+
+
 # UserInfo_2,4,8,20是否相等
 # 城市等级
 # 是否为省会
@@ -202,7 +240,7 @@ names(model_df)[match(c("loginfo1-10", "loginfo1-4"), names(model_df))] <- c('lo
 
 # i <- sapply(model_df, is.factor)
 # model_df[i] <- lapply(model_df[i], as.numeric)
-# 
+#
 # sub_model_df <- model_df %>% select(-starts_with('loginfo'), -starts_with('userupdateinfo'))
 # xgb_data <- xgb.DMatrix(data=as.matrix(sub_model_df %>% filter(idx %in% train_master$Idx) %>% select(-idx)),
 #                         label = train_master$target)
@@ -213,7 +251,7 @@ names(model_df)[match(c("loginfo1-10", "loginfo1-4"), names(model_df))] <- c('lo
 # bst <- xgb.train(data=xgb_data, eta = 0.1,
 #               nround = 100, max.depth = 15, objective = "binary:logistic", eval_metric = "auc",
 #               scale_pos_weight =0.01)
-# 
+#
 # importance_matrix <- xgb.importance(names(model_df), model = bst)
 
 train_model_df <- model_df %>% filter(idx %in% train_master$Idx) %>%
@@ -227,23 +265,23 @@ bst <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold =
               nrounds = 5000, max.depth = 10, objective = "binary:logistic", eval_metric = "auc",
               early.stop.round = 60, scale_pos_weight = 0.01)
 # 0.748784
-# Best iteration: 331 
+# Best iteration: 331
 mst <- xgboost(data = train_sparse_matrix, label = train_model_df$target, eta = 0.1,
               nround = 331, max.depth = 9, objective = "binary:logistic", eval_metric = "auc",
-              scale_pos_weight = 0.01)
+              scale_pos_weight = 0.01, verbose = 0)
 importance_matrix <- xgb.importance(train_sparse_matrix@Dimnames[[2]], model = mst)
 ########################## work
 # 经济增长率
 # thirdparty_df <- model_df %>% select(starts_with('thirdparty'))
 # names(thirdparty_df) <- paste0(names(thirdparty_df), '_init')
-# 
+#
 # num_func <- function(x){
 #     quan3 <- quantile(x, 0.8, na.rm=T)
 #     as.factor(ifelse(x > quan3, -2, x))
 # }
 # i <- grepl('thirdparty_info', names(model_df))
 # model_df[i] <- lapply(model_df[i], num_func)
-# 
+#
 # model_df <- bind_cols(model_df, thirdparty_df)
 # names(model_df) <- gsub('-', '_', names(model_df))
 # # model_df$category1 <- as.factor(ifelse(model_df$thirdparty_info_period2_2 > 68, 99999,
@@ -255,6 +293,12 @@ importance_matrix <- xgb.importance(train_sparse_matrix@Dimnames[[2]], model = b
 View(importance_matrix)
 xgb.plot.deepness(model = mst)
 p <- predict(mst, test_sparse_matrix)
+daily_df <- read.csv('first round test data/daily_test.csv')
+final_df <- read.csv('first round test data/final_test.csv')
+test_df <- bind_rows(daily_df, final_df) %>% left_join(data_frame(Idx=test_model_df$idx, p=p))
+Metrics::auc(test_df %>% filter(idx %in% final_df$idx) %$% target, test_df%>% filter(idx %in% final_df$idx) %$% p) # 0.7500642
+
+
 ########################## work
 # # 0.751307
 # bstt <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 10, eta = 0.01,
@@ -269,17 +313,17 @@ p <- predict(mst, test_sparse_matrix)
 #                 nrounds = 500000, max.depth = 25, objective = "binary:logistic", eval_metric = "auc",
 #                 early.stop.round = 500, scale_pos_weight = 0.02)
 # Sys.time()
-# 
-# 
+#
+#
 # bst <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 10, eta = 0.1,
 #               nrounds = 5000, max.depth = 30, objective = "binary:logistic", eval_metric = "auc",
 #               early.stop.round = 100, scale_pos_weight = 0.005)
-# 
+#
 # fitControl <- trainControl(method = "cv", number = 10, repeats = 1, search = "random")
 # # train a xgbTree model using caret::train
 # model <- train(train_sparse_matrix, train_model_df$target,
 #                method = "xgbTree", trControl = fitControl)
-# 
+#
 # # 0.743673+0.007338
 # # 0.741335+0.010964
 # # 0.747451+0.008305
@@ -295,7 +339,7 @@ p <- predict(mst, test_sparse_matrix)
 # bst2 <- xgboost(data = train_sparse_matrix, label = train_model_df$target, eta = 0.05,
 #               nrounds = 700, max.depth = 15, objective = "binary:logistic", eval_metric = "auc",
 #               scale_pos_weight = 0.01)
-# 
+#
 # bst_rf <- xgb.cv(data = train_sparse_matrix[, importance_matrix$Feature], label = train_model_df$target,  max.depth = 35,
 #                num_parallel_tree = 1000, subsample = 0.5, colsample_bytree =0.5, nrounds = 5000,
 #                objective = "binary:logistic", early.stop.round = 50, eval_metric = "auc",nfold = 10)
@@ -303,33 +347,33 @@ p <- predict(mst, test_sparse_matrix)
 # p1 <- predict(bst, test_sparse_matrix) # 0.747745+0.00
 # p2 <- predict(bst, test_sparse_matrix) # :0.745305+0.017916
 # # p3 <- predict(bst, test_sparse_matrix) # 0.747745+0.00
-# 
+#
 # best1 <- read.csv('res0324.csv')
 # best2 <- read.csv('res12016-03-27.csv')
-# 
+#
 # p <- best1$score*0.4 + p1*0.4 + best2$score*0.1 + p2 * 0.1
-# 
+#
 # p_bst_train <- predict(bst, train_sparse_matrix)
-# 
+#
 # importance_matrix <- xgb.importance(train_sparse_matrix@Dimnames[[2]], model = bst)
 # xgb.plot.importance(importance_matrix)
-# 
+#
 # glm_matrix <- train_sparse_matrix[, importance_matrix$Feature]
-# 
+#
 # # inTrain <- createDataPartition(y = train_model_df$target, p = .75, list = FALSE)
-# 
-# 
+#
+#
 # cctrl1 <- trainControl(method = "cv", number = 5,
 #                        # returnResamp = "all",
 #                        classProbs = T, summaryFunction = twoClassSummary)
 #                        # sampling = "smote")
-# 
+#
 # # trainY <- factor(train_model_df$target, labels=c('no', 'yes'))
-# 
+#
 # glm_data <- cbind(as.matrix(glm_matrix), trainY=train_model_df$target) %>% as.data.frame
 # glm_data$trainY <- factor(glm_data$trainY, labels=c('no', 'yes'))
 # smote_train <- SMOTE(trainY ~ ., data  = glm_data)
-# 
+#
 # set.seed(849)
 # test_class_cv_model <- train(trainY ~ ., smote_train,
 #                              method = "glmnet",
@@ -338,7 +382,7 @@ p <- predict(mst, test_sparse_matrix)
 #                              # preProc = c("center", "scale"),
 #                              tuneGrid = expand.grid(.alpha = seq(.001, 0.005, length = 3),
 #                                                     .lambda = c((1:2)/20)))
-# 
+#
 # p_train <- predict(test_class_cv_model, glm_data, type='prob')[, 2]
 # p_glm <- predict(test_class_cv_model,
 #                  newdata=as.data.frame(as.matrix(test_sparse_matrix)), type = "prob")[, 2]
@@ -346,14 +390,14 @@ p <- predict(mst, test_sparse_matrix)
 # # fit_lm <- glm(target ~ ., family=binomial(link="logit"), data = train_model_df[, -c(1, 4)])
 # # train_p_lm <- predict(fit_lm, newdata = train_model_df, type = "response")
 # # p_lm <- predict(fit_lm, newdata = test_model_df, type = "response")
-# 
+#
 # # glm_data$trainY
 calc_auc_func <- function(p, real) {
   pred <- prediction(p, real)
   perf <- performance(pred, "auc")
   perf@y.values[[1]]
 }
-# 
+#
 # p <- p1*0.999 + p_glm*0.001
 res <- test_model_df %>% select(idx) %>% mutate(score=round(p, 4))
 res[is.na(res)] <- 0
@@ -376,7 +420,7 @@ write.csv(res, 'res.csv', row.names=F)
 # # 2013年可能技术不完善，违约高
 # # 不同月份的违约也是不一样的，12月违约高
 # # 填补缺失值改一下，不用的字段去掉
-# 
+#
 # userinfo_19
 # userinfo_7
 # # gdp数据
