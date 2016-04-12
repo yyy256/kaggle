@@ -12,6 +12,7 @@ library(Matrix)
 # library(caret)
 # library(glmnet)
 # library(DMwR)
+library(smbinning)
 load('mz.RData')
 load('lola_df.RData')
 load('city_info.RData')
@@ -29,21 +30,21 @@ train_master$ListingInfo <- ymd(train_master$ListingInfo)
 test_master$ListingInfo <- dmy(test_master$ListingInfo)
 
 # 将大于10种的分段
-binning_name <- names(train_master)[sapply(train_master, function(x) n_distinct(x) > 10 & !is.character(x))]
-binning_name <- binning_name[-c(1, length(binning_name))]
-binning_func <- function(x) {
-  result=smbinning(df=train_master,y="target",x=x,p=0.05) 
-  if (result=="No Bins") NULL else result$bands
-}
-bands <- lapply(binning_name, binning_func)
-names(bands) <- binning_name
+# binning_name <- names(train_master)[sapply(train_master, function(x) n_distinct(x) > 10 & !is.character(x))]
+# binning_name <- binning_name[-c(1, length(binning_name))]
+# binning_func <- function(x) {
+#   result=smbinning(df=train_master,y="target",x=x,p=0.05)
+#   if (result=="No Bins") NULL else result$bands
+# }
+# bands <- lapply(binning_name, binning_func)
+# names(bands) <- binning_name
 
 log_info <- bind_rows(train_log_info, test_log_info)
 master <- bind_rows(train_master %>% select(-target), test_master)
 user_info <- bind_rows(train_user_info, test_user_info)
 
 clean_city_func <- function(x){
-  x <- sub('(市)|(自治州)', '', x)
+  x <- sub('(市)|(自治州)|(地区)', '', x)
 
   for (n in mz){
     x <- sub(n, '', x)
@@ -97,6 +98,8 @@ pre_process_func <- function(log_info, master, user_info){
   i <- names(master) %in% province_name
   master[i] <- lapply(master[i], clean_province_func)
 
+  master <- master %>% left_join(city_info, by=c('userinfo_8'='name')) %>% 
+    left_join(lola_df, by=c('userinfo_8'='city'))
   # # 把UserInfo_19里面的省、市、自治区这几个字去掉
   # master$userinfo_19 <- gsub('(省)|(市)|(自治区)|(维吾尔)|(回族)|(壮族)', '', master$userinfo_19)
   # UserInfo_7是否等于UserInfo_19
@@ -119,7 +122,14 @@ pre_process_func <- function(log_info, master, user_info){
   # UserInfo_1, UserInfo_5, UserInfo_6, UserInfo_14，UserInfo_15，UserInfo_14-17应该看作因子变量
   i <- names(master) %in% c(paste0('userinfo_', c(1,5,6,14:17)), paste0('socialnetwork', 1:17))
   master[i] <- lapply(master[i], as.factor)
-
+  # master <- as.data.frame(master)
+  # for (n in binning_name){
+  #   band <- bands[[n]]
+  #   if (!is.null(band)){
+  #     n <- tolower(n)
+  #     master[, n] <- cut(master[, n], breaks = c(-Inf, band, Inf))
+  #   }
+  # }
   # 将修改内容都变成小写，去掉两边空格
   user_info$userupdateinfo1 <- str_trim(tolower(user_info$userupdateinfo1))
 
@@ -263,12 +273,12 @@ train_sparse_matrix <- sparse.model.matrix(target ~ .-1-idx, train_model_df)
 test_sparse_matrix <- sparse.model.matrix(~ .-1-idx, test_model_df)
 
 bst <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 10, eta = 0.1,
-              nrounds = 5000, max.depth = 10, objective = "binary:logistic", eval_metric = "auc",
+              nrounds = 5000, max.depth = 9, objective = "binary:logistic", eval_metric = "auc",
               early.stop.round = 60, scale_pos_weight = 0.01)
 # 0.748784
 # Best iteration: 331
 mst <- xgboost(data = train_sparse_matrix, label = train_model_df$target, eta = 0.1,
-              nround = 331, max.depth = 9, objective = "binary:logistic", eval_metric = "auc",
+              nround = 339, max.depth = 9, objective = "binary:logistic", eval_metric = "auc",
               scale_pos_weight = 0.01, verbose = 0)
 importance_matrix <- xgb.importance(train_sparse_matrix@Dimnames[[2]], model = mst)
 ########################## work
@@ -294,12 +304,13 @@ importance_matrix <- xgb.importance(train_sparse_matrix@Dimnames[[2]], model = b
 View(importance_matrix)
 xgb.plot.deepness(model = mst)
 p <- predict(mst, test_sparse_matrix)
-daily_df <- read.csv('first round test data/daily_test.csv')
-final_df <- read.csv('first round test data/final_test.csv')
+# daily_df <- read.csv('first round test data/daily_test.csv')
+# final_df <- read.csv('first round test data/final_test.csv')
 test_df <- bind_rows(daily_df, final_df) %>% left_join(data_frame(Idx=test_model_df$idx, p=p))
-Metrics::auc(test_df %>% filter(idx %in% final_df$idx) %$% target, test_df%>% filter(idx %in% final_df$idx) %$% p) # 0.7500642
+Metrics::auc(test_df %>% filter(Idx %in% daily_df$Idx) %$% target, test_df%>% filter(Idx %in% daily_df$Idx) %$% p) # 0.7500642
+Metrics::auc(test_df %>% filter(Idx %in% final_df$Idx) %$% target, test_df%>% filter(Idx %in% final_df$Idx) %$% p) # 0.7500642
 
-
+Metrics::auc(test_df$target, test_df$p)  # 0.7500642 0.753
 ########################## work
 # # 0.751307
 # bstt <- xgb.cv(data = train_sparse_matrix, label = train_model_df$target, nfold = 10, eta = 0.01,
